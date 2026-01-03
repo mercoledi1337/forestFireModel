@@ -1,159 +1,181 @@
+#define _CRT_RAND_S
 #include <random>
 #include "gnuplot_iostream.h"
-#include <time.h>
+#include <cmath>
+
+#define M_PI 3.14159265358979323846
 
 using namespace std;
+std::mt19937 rng(std::random_device{}());
 
-const float p = 0.6;
-const int maxX = 10;
-const int maxY = 10;
+const float p = 600;
+const float s = 1;
+const int maxX = 50;
+const int maxY = 50;
+const int k = 5;
 
-void fire(vector<vector<int>>& forest, int y, int x, vector<vector<int>> newForest) {
+void fillWater(vector<int>& water) {
+    for (int i = 0; i < maxY; i++) {
+        double tmp = 2.0 * M_PI/50.0;
+        double siny = sin(tmp * i) + 1;
+        water.push_back(25 * siny);
+    }
+}
 
+void init(vector<vector<int>>& baseForest) {
+    baseForest.resize(maxY, vector(maxX, 1));
 
-    if (x == 0) {
-        //left bottom corner
-        if (y == 0) {
-            forest[y][x + 1] = newForest[y][x + 1] == 1 ? forest[y][x + 1]+1 : forest[y][x + 1];
-            forest[y + 1][x + 1] = newForest[y + 1][x + 1] == 1 ? forest[y + 1][x + 1]+1 : forest[y + 1][x + 1];
-            forest[y + 1][x] = newForest[y + 1][x] == 1 ? forest[y + 1][x]+1 : forest[y + 1][x];
-            return;
+    vector<int> water;
+    fillWater(water);
+
+    // filing with trees and empty space
+    for (int i = 0; i < maxY; i++) {
+        for (int j = 0; j < maxX; j++) {
+            if (rng() % 10 > 1){
+            baseForest[i][j] = 1;
+        }else {
+               baseForest[i][j] = 0;
+           }
         }
-
-        //left top corner
-        if (y == maxY - 1) {
-            forest[y][x + 1] = newForest[y][x + 1] == 1 ? forest[y][x + 1]+1 : forest[y][x + 1];
-            forest[y - 1][x + 1] = newForest[y - 1][x + 1] == 1 ? forest[y - 1][x + 1]+1 : forest[y - 1][x + 1];
-            forest[y - 1][x] = newForest[y - 1][x] == 1 ? forest[y - 1][x]+1 : forest[y - 1][x];
-            return;
-        }
-
-        //left wall
-        forest[y + 1][x] = newForest[y + 1][x] == 1 ? forest[y + 1][x]+1 : forest[y + 1][x];
-        forest[y + 1][x + 1] = newForest[y + 1][x + 1] == 1 ? forest[y + 1][x + 1]+1 : forest[y + 1][x + 1];
-        forest[y][x + 1] = newForest[y][x + 1] == 1 ? forest[y][x + 1]+1 : forest[y][x + 1];
-        forest[y - 1][x + 1] = newForest[y - 1][x + 1] == 1 ? forest[y - 1][x + 1]+1 : forest[y - 1][x + 1];
-        forest[y - 1][x] = newForest[y - 1][x] == 1 ? forest[y - 1][x]+1 : forest[y - 1][x];
-        return;
     }
 
-    if (x == maxX - 1) {
-        //right bottom corner
-        if (y == 0) {
-            forest[y][x - 1] = newForest[y][x - 1] == 1 ? forest[y][x - 1]+1 : forest[y][x - 1];
-            forest[y + 1][x - 1] = newForest[y + 1][x - 1] == 1 ? forest[y + 1][x - 1]+1 : forest[y + 1][x - 1];
-            forest[y + 1][x] = newForest[y + 1][x] == 1 ? forest[y + 1][x]+1 : forest[y + 1][x];
-            return;
+    const int riverWidth = 2;
+    for (int j = 0; j < maxX; j++) {
+        for (int w = -riverWidth; w <= riverWidth; w++) {
+            int y = water[j] + w;
+            if (y >= 0 && y < maxY) {
+                baseForest[y][j] = 4;
+            }
         }
+    }
+}
 
-        //right top corner
-        if (y == maxY - 1) {
-            forest[y][x - 1] = newForest[y][x - 1] == 1 ? forest[y][x - 1]+1 : forest[y][x - 1];
-            forest[y - 1][x - 1] = newForest[y - 1][x - 1] == 1 ? forest[y - 1][x - 1]+1 : forest[y - 1][x - 1];
-            forest[y - 1][x] = newForest[y - 1][x] == 1 ? forest[y - 1][x]+1 : forest[y - 1][x];
-            return;
+void fire(vector<vector<int>>& forest, int y, int x, vector<vector<int>>& newForest,int wind) {
+    if (newForest[y][x] != 2)
+        return;
+
+    // added values and start and end for not reaching outofstack
+    int windMatrix[10][2] = {{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}, {1,0}};
+
+    for (int i = -1; i <= 1; i++) {
+        int randFire = static_cast<int>(rng()) % 1000;
+        for (int j = -1; j <= 1; j++) {
+            int ny = y + i;
+            int nx = x + j;
+            if (ny >= maxY || nx >= maxX || ny < 0 || nx < 0)
+                continue;
+            int windY = windMatrix[wind + j][0];
+            int windX = windMatrix[wind + j][1];
+            if (newForest[y][x] == 2 && forest[ny][nx] == 1)
+                if (ny == windY + y && nx == windX + x) {
+                    if (randFire + 200 > 400) {
+                        forest[ny][nx] = 2;
+                    }
+                } else if (randFire - 100 > 400)
+                    forest[ny][nx] = 2;
         }
-
-        //right wall
-        forest[y + 1][x] = newForest[y + 1][x] == 1 ? forest[y + 1][x]+1 : forest[y + 1][x];
-        forest[y + 1][x - 1] = newForest[y + 1][x - 1] == 1 ? forest[y + 1][x - 1]+1 : forest[y + 1][x - 1];
-        forest[y][x - 1] = newForest[y][x - 1] == 1 ? forest[y][x - 1]+1 : forest[y][x - 1];
-        forest[y - 1][x - 1] = newForest[y - 1][x - 1] == 1 ? forest[y - 1][x - 1]+1 : forest[y - 1][x - 1];
-        forest[y - 1][x] = newForest[y - 1][x] == 1 ? forest[y - 1][x]+1 : forest[y - 1][x];
-        return;
     }
+    forest[y][x] = 3;
+}
 
-    //bottom wall
-    if (y == 0) {
-        forest[y][x - 1] = newForest[y][x - 1] == 1 ? forest[y][x - 1]+1 : forest[y][x - 1];
-        forest[y + 1][x - 1] = newForest[y + 1][x - 1] == 1 ? forest[y + 1][x - 1]+1 : forest[y + 1][x - 1];
-        forest[y + 1][x] = newForest[y + 1][x] == 1 ? forest[y + 1][x]+1 : forest[y + 1][x];
-        forest[y + 1][x + 1] = newForest[y + 1][x + 1] == 1 ? forest[y + 1][x + 1]+1 : forest[y + 1][x + 1];
-        forest[y][x + 1] = newForest[y][x + 1] == 1 ? forest[y][x + 1]+1 : forest[y][x + 1];
-        return;
+pair<int,int> windVector(int wind) {
+    switch (wind) {
+        case 1: return {1,0}; // SE
+        case 2: return {1,1}; // S
+        case 3: return {0,1}; // SW
+        case 4: return {-1, 1}; // W
+        case 5: return {-1,0}; // E
+        case 6: return {-1,-1}; // NW
+        case 7: return { 0, -1}; // N
+        case 8: return {1,-1}; // NE
     }
+    return {0,0};
+}
 
-    //top wall
-    if (y == maxY - 1) {
-        forest[y][x - 1] = newForest[y][x - 1] == 1 ? forest[y][x - 1]+1 : forest[y][x - 1];
-        forest[y - 1][x - 1] = newForest[y - 1][x - 1] == 1 ? forest[y - 1][x - 1]+1 : forest[y - 1][x - 1];
-        forest[y - 1][x] = newForest[y - 1][x] == 1 ? forest[y - 1][x]+1 : forest[y - 1][x];
-        forest[y - 1][x + 1] = newForest[y - 1][x + 1] == 1 ? forest[y - 1][x + 1]+1 : forest[y - 1][x + 1];
-        forest[y][x + 1] = newForest[y][x + 1] == 1 ? forest[y][x + 1]+1 : forest[y][x + 1];
-        return;
+void startFire(vector<vector<int>>& baseForest){
+    int xfire = rng() % maxX;
+    int yfire = rng() % maxY;
+
+    if (baseForest[yfire][xfire] == 4)
+        startFire(baseForest);
+    else {
+        baseForest[yfire][xfire] = 2;
     }
-
-    forest[y + 1][x + 1] = newForest[y + 1][x + 1] == 1 ? forest[y + 1][x + 1]+1 : forest[y + 1][x + 1];
-    forest[y][x + 1] = newForest[y][x + 1] == 1 ? forest[y][x + 1]+1 : forest[y][x + 1];
-    forest[y - 1][x + 1] = newForest[y - 1][x + 1] == 1 ? forest[y - 1][x + 1]+1 : forest[y - 1][x + 1];
-    forest[y + 1][x] = newForest[y + 1][x] == 1 ? forest[y + 1][x]+1 : forest[y + 1][x];
-    forest[y - 1][x] = newForest[y - 1][x] == 1 ? forest[y - 1][x]+1 : forest[y - 1][x];
-    forest[y + 1][x - 1] = newForest[y + 1][x - 1] == 1 ? forest[y + 1][x - 1]+1 : forest[y + 1][x - 1];
-    forest[y][x - 1] = newForest[y][x - 1] == 1 ? forest[y][x - 1]+1 : forest[y][x - 1];
-    forest[y - 1][x - 1] = newForest[y - 1][x - 1] == 1 ? forest[y - 1][x - 1]+1 : forest[y - 1][x - 1];
 
 }
 
 int main() {
-    vector<vector<int>> test;
-    srand(time(NULL));
-    for (int i = 0; i < 10; i++) {
-        vector<int> a;
-        for (int j = 0; j < 10; j++) {
-        a.push_back(j);
-        }
-        test.push_back(a);
-    }
+    unsigned int number;
+    int randWind = static_cast<int>(rng()) % 8 + 1;
 
-    for (int i = 0; i < 10; i++) {
-        for (int j = 0; j < 10; j++) {
-            int tab[3] = {0,1,2};
-            test[i][j] = tab[rand() % 2];
-        }
-    }
+    vector<vector<int>> baseForest;
 
-    int xfire = rand() % 10;
-    int yfire = rand() % 10;
+    init(baseForest);
 
-    test[yfire][xfire] = 2;
+    startFire(baseForest);
 
     // uruchamiamy gnuplot
     Gnuplot gp("D:/gnuplot/bin/gnuplot.exe");
 
-    gp << "set term wxt\n";  // żeby pokazać okno
+    gp << "set term wxt\n";
     gp << "set autoscale fix\n";
-    gp << "set palette defined (0 'white', 1 'green', 2 'red', 3 'black')\n";
-    gp << "set cbrange[0:3]\n";
-    gp << "unset cbtics\n";
+    gp << "set palette defined (0 'white', 1 'green', 2 'red', 3 'black', 4 'blue')\n";
+    gp << "set cbrange[0:4]\n";
+    gp << "set colorbox\n";
+    gp << "set cblabel 'Stan komórki'\n";
+    gp << "set cbtics ('Puste' 0, 'Drzewo' 1, 'Ogien' 2, 'Spalone' 3, 'Woda' 4)\n";
     gp << "unset key\n";
 
     gp << "plot '-' matrix with image\n";
 
-    gp.send1d(test);  // 1. matrix (image)
+    gp.send1d(baseForest);  // 1. matrix (image)
     cin.get();
 
-
-    for (int temp = 0; temp < 20; temp++) {
-        auto newforest = test;
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
-                if (test[i][j] == 2) {
-                    fire(test, i, j, newforest);
-
+    for (int temp = 0; temp < 200; temp++) {
+        if (temp % 25 == 0) {
+            std::uniform_int_distribution<int> windDist(1,8);
+            randWind = windDist(rng); // zawsze 1..8
+        }
+        auto newforest = baseForest;
+        for (int i = 0; i < maxY; i++) {
+            for (int j = 0; j < maxX; j++) {
+                if (newforest[i][j] == 2) {
+                    fire(baseForest, i, j, newforest, randWind);
                 }
+                rand_s(&number);
+                if (newforest[i][j] == 1 && (unsigned int) ((double)number /
+                       ((double) UINT_MAX + 1 ) * 10000) < s) {
+                    baseForest[i][j] = 2;
+                }
+                if (newforest[i][j] == 3 && temp % 25 == 0)
+                    baseForest[i][j] = 1;
             }
         }
 
+        // Pobierz wektor wiatru
+        auto [wx, wy] = windVector(randWind);
 
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
+        // Normalizacja i minimalna długość
+        double norm = sqrt(wx*wx + wy*wy);
+        double arrowLength = 0.08; // długość strzałki w screen units
+        double dx = 0.0, dy = 0.0;
 
-            }
+        if (norm != 0) {
+            dx = (wx / norm) * arrowLength;
+            dy = (wy / norm) * arrowLength;
+        } else {
+            dx = dy = 0.0; // brak wiatru
         }
+
+
+        gp << "unset arrow 1\n";
+        gp << "set arrow 1 from screen 0.85, screen 0.85 to screen "
+           << 0.85 + dx << ", screen " << 0.85 + dy
+           << " lw 3 lc rgb 'gray' front head filled size screen 0.02,15,60\n";
+
         gp << "plot '-' matrix with image\n";
-        gp.send1d(test);
-
-        cin.get();
+        gp.send1d(baseForest);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     cin.get();
