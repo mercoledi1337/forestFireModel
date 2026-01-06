@@ -1,85 +1,34 @@
-#define _CRT_RAND_S
 #include <random>
 #include "gnuplot_iostream.h"
 #include <cmath>
+#include <thread>
+#include <chrono>
 
-#define M_PI 3.14159265358979323846
+constexpr double M_PI = 3.14159265358979323846; // pi for sinus water
 
-using namespace std;
 std::mt19937 rng(std::random_device{}());
 
-const float p = 600;
-const float s = 1;
-const int maxX = 50;
-const int maxY = 50;
-const int k = 5;
+Gnuplot gp("D:/gnuplot/bin/gnuplot.exe");
 
-void fillWater(vector<int>& water) {
-    for (int i = 0; i < maxY; i++) {
-        double tmp = 2.0 * M_PI/50.0;
-        double siny = sin(tmp * i) + 1;
-        water.push_back(25 * siny);
-    }
-}
+constexpr int maxX = 100;
+constexpr int maxY = 100;
+constexpr int riverWidth = 2;
+constexpr int fireChance = 600;
+constexpr int amountOfIterations = 50;
+constexpr int windBonus = 250;
+constexpr int iterations = 200;
 
-void init(vector<vector<int>>& baseForest) {
-    baseForest.resize(maxY, vector(maxX, 1));
+enum class Cell {
+    Empty = 0,
+    Tree = 1,
+    Fire = 2,
+    Burned = 3,
+    Water = 4
+};
 
-    vector<int> water;
-    fillWater(water);
-
-    // filing with trees and empty space
-    for (int i = 0; i < maxY; i++) {
-        for (int j = 0; j < maxX; j++) {
-            if (rng() % 10 > 1){
-            baseForest[i][j] = 1;
-        }else {
-               baseForest[i][j] = 0;
-           }
-        }
-    }
-
-    const int riverWidth = 2;
-    for (int j = 0; j < maxX; j++) {
-        for (int w = -riverWidth; w <= riverWidth; w++) {
-            int y = water[j] + w;
-            if (y >= 0 && y < maxY) {
-                baseForest[y][j] = 4;
-            }
-        }
-    }
-}
-
-void fire(vector<vector<int>>& forest, int y, int x, vector<vector<int>>& newForest,int wind) {
-    if (newForest[y][x] != 2)
-        return;
-
-    // added values and start and end for not reaching outofstack
-    int windMatrix[10][2] = {{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}, {1,0}};
-
-    for (int i = -1; i <= 1; i++) {
-        int randFire = static_cast<int>(rng()) % 1000;
-        for (int j = -1; j <= 1; j++) {
-            int ny = y + i;
-            int nx = x + j;
-            if (ny >= maxY || nx >= maxX || ny < 0 || nx < 0)
-                continue;
-            int windY = windMatrix[wind + j][0];
-            int windX = windMatrix[wind + j][1];
-            if (newForest[y][x] == 2 && forest[ny][nx] == 1)
-                if (ny == windY + y && nx == windX + x) {
-                    if (randFire + 200 > 400) {
-                        forest[ny][nx] = 2;
-                    }
-                } else if (randFire - 100 > 400)
-                    forest[ny][nx] = 2;
-        }
-    }
-    forest[y][x] = 3;
-}
-
-pair<int,int> windVector(int wind) {
+std::pair<int,int> windVector(const int wind) {
     switch (wind) {
+        case 0: return {1,-1}; // NE
         case 1: return {1,0}; // SE
         case 2: return {1,1}; // S
         case 3: return {0,1}; // SW
@@ -88,96 +37,196 @@ pair<int,int> windVector(int wind) {
         case 6: return {-1,-1}; // NW
         case 7: return { 0, -1}; // N
         case 8: return {1,-1}; // NE
+        case 9: return {1,0}; // SE
+        default: ;
     }
     return {0,0};
 }
 
-void startFire(vector<vector<int>>& baseForest){
-    int xfire = rng() % maxX;
-    int yfire = rng() % maxY;
-
-    if (baseForest[yfire][xfire] == 4)
-        startFire(baseForest);
-    else {
-        baseForest[yfire][xfire] = 2;
+void sinusWater(std::vector<int>& water) {
+    for (int i = 0; i < maxY; i++) {
+        constexpr double tmp = 2.0 * M_PI/maxY;
+        const double sinusY = sin(tmp * i) + 1;
+        water.push_back(static_cast<int>(maxY / 2.0 * sinusY));
     }
-
 }
 
-int main() {
-    unsigned int number;
-    int randWind = static_cast<int>(rng()) % 8 + 1;
+void fillWater(std::vector<int>& water, std::vector<std::vector<Cell>>& baseForest) {
+    sinusWater(water);
+    for (int j = 0; j < maxY; j++) {
+        for (int w = -riverWidth; w <= riverWidth; w++) {
+            int y = water[j] + w;
+            if (y >= 0 && y < maxY) {
+                baseForest[y][j] = Cell::Water;
+            }
+        }
+    }
+}
 
-    vector<vector<int>> baseForest;
+std::vector<std::vector<int>> toGnuplotMatrix(const std::vector<std::vector<Cell>>& forest) {
+    std::vector out(maxY, std::vector<int>(maxX));
+    for (int y = 0; y < maxY; y++)
+        for (int x = 0; x < maxX; x++)
+            out[y][x] = static_cast<int>(forest[y][x]);
 
-    init(baseForest);
+    return out;
+}
 
-    startFire(baseForest);
+bool inBounds(const int y, const int x) {
+    return y >= 0 && y < maxY && x >= 0 && x < maxX;
+}
 
-    // uruchamiamy gnuplot
-    Gnuplot gp("D:/gnuplot/bin/gnuplot.exe");
+void fillWithTrees(std::vector<std::vector<Cell>>& baseForest) {
+    for (int i = 0; i < maxY; i++) {
+        for (int j = 0; j < maxX; j++) {
+            baseForest[i][j] = rng() % 10 > 1 ? Cell::Tree : Cell::Empty;
+        }
+    }
+}
 
+void init(std::vector<std::vector<Cell>>& baseForest, std::vector<std::vector<Cell>>& temporaryForest) {
+    baseForest.resize(maxY, std::vector(maxX, Cell::Empty));
+    temporaryForest.resize(maxY, std::vector(maxX, Cell::Empty));
+    std::vector<int> water;
+
+    fillWithTrees(baseForest);
+    fillWater(water, baseForest);
+}
+
+void initFire(std::vector<std::vector<Cell>>& baseForest){
+    int x, y;
+    do {
+        std::uniform_int_distribution distX(0, maxX - 1);
+        std::uniform_int_distribution distY(0, maxY - 1);
+
+        x = distX(rng);
+        y = distY(rng);
+
+    } while (baseForest[y][x] == Cell::Water);
+
+    baseForest[y][x] = Cell::Fire;
+}
+
+void fire(std::vector<std::vector<Cell>>& forest, const int y, const int x,
+    const std::vector<std::vector<Cell>>& temporaryForest,const int wind) {
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            int ny = y + dy;
+            int nx = x + dx;
+
+            if (!inBounds(ny,nx)) continue;
+
+            auto [windY,windX] = windVector(wind + dx); //dx work as offset for neighbours
+
+            if (temporaryForest[y][x] == Cell::Fire && forest[ny][nx] == Cell::Tree){
+                if (ny == windY + y && nx == windX + x
+                    && rng() % 1000 - windBonus <= fireChance)
+                    forest[ny][nx] = Cell::Fire; // NOLINT(*-branch-clone)
+                if (rng() % 1000 + windBonus <= fireChance)
+                    forest[ny][nx] = Cell::Fire;
+            }
+        }
+    }
+    forest[y][x] = Cell::Burned;
+}
+
+void showForest(const std::vector<std::vector<Cell>>& baseForest) {
     gp << "set term wxt\n";
     gp << "set autoscale fix\n";
+    //seting pallete for state
     gp << "set palette defined (0 'white', 1 'green', 2 'red', 3 'black', 4 'blue')\n";
     gp << "set cbrange[0:4]\n";
     gp << "set colorbox\n";
     gp << "set cblabel 'Stan komórki'\n";
-    gp << "set cbtics ('Puste' 0, 'Drzewo' 1, 'Ogien' 2, 'Spalone' 3, 'Woda' 4)\n";
+    gp << "set cbtics ('Empty' 0, 'Tree' 1, 'Fire' 2, 'Burned' 3, 'Water' 4)\n";
     gp << "unset key\n";
+    gp << "plot '-' matrix with image\n";
+    gp.send1d(toGnuplotMatrix(baseForest));
+}
 
+void changeWind(int& randWind, int temp) {
+    if (temp % amountOfIterations == 0) {
+        std::uniform_int_distribution windDist(1,8);
+        randWind = windDist(rng);
+    }
+}
+
+void spreadFire(std::vector<std::vector<Cell>>& baseForest,const std::vector<std::vector<Cell>>& temporaryForest
+    ,const int i, const int j,const int randWind) {
+    if (temporaryForest[i][j] == Cell::Fire) {
+        fire(baseForest, i, j, temporaryForest, randWind);
+    }
+}
+
+void regenerationTree(std::vector<std::vector<Cell>>& baseForest,const std::vector<std::vector<Cell>>& temporaryForest
+    ,const int i, const int j, const int temp) {
+    if (temporaryForest[i][j] == Cell::Burned && temp % amountOfIterations == 0)
+        baseForest[i][j] = Cell::Tree;
+}
+
+std::pair<double,double> drawWindArrow(const int randWind) {
+    auto [wx, wy] = windVector(randWind);
+
+    double norm = sqrt(wx*wx + wy*wy);
+    double arrowLength = 0.08;
+    double dx = 0.0, dy = 0.0;
+
+    if (norm != 0) {
+        dx = (wx / norm) * arrowLength;
+        dy = (wy / norm) * arrowLength;
+    } else {
+        dx = dy = 0.0; // brak wiatru
+    }
+
+    return std::make_pair(dy, dx);
+}
+
+
+void drawCurrentForest(const std::vector<std::vector<Cell>>& baseForest,const int randWind) {
+    auto [dy,dx] = drawWindArrow(randWind);
+
+    gp << "unset arrow 1\n";
+    gp << "set arrow 1 from screen 0.85, screen 0.85 to screen "
+       << 0.85 + dy << ", screen " << 0.85 + dx
+       << " lw 3 lc rgb 'gray' front head filled size screen 0.02,15,60\n";
     gp << "plot '-' matrix with image\n";
 
-    gp.send1d(baseForest);  // 1. matrix (image)
-    cin.get();
+    gp.send1d(toGnuplotMatrix(baseForest));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
 
-    for (int temp = 0; temp < 200; temp++) {
-        if (temp % 25 == 0) {
-            std::uniform_int_distribution<int> windDist(1,8);
-            randWind = windDist(rng); // zawsze 1..8
-        }
-        auto newforest = baseForest;
+void simulation(std::vector<std::vector<Cell>>& baseForest,int randWind) {
+    for (int temp = 0; temp < iterations; temp++) {
+        changeWind(randWind, temp);
+
+        auto temporaryForest = baseForest;
+
         for (int i = 0; i < maxY; i++) {
             for (int j = 0; j < maxX; j++) {
-                if (newforest[i][j] == 2) {
-                    fire(baseForest, i, j, newforest, randWind);
-                }
-                rand_s(&number);
-                if (newforest[i][j] == 1 && (unsigned int) ((double)number /
-                       ((double) UINT_MAX + 1 ) * 10000) < s) {
-                    baseForest[i][j] = 2;
-                }
-                if (newforest[i][j] == 3 && temp % 25 == 0)
-                    baseForest[i][j] = 1;
+                spreadFire(baseForest, temporaryForest, i, j, randWind);
+                regenerationTree(baseForest, temporaryForest, i, j, temp);
             }
         }
 
-        // Pobierz wektor wiatru
-        auto [wx, wy] = windVector(randWind);
+        drawCurrentForest(baseForest, randWind);
 
-        // Normalizacja i minimalna długość
-        double norm = sqrt(wx*wx + wy*wy);
-        double arrowLength = 0.08; // długość strzałki w screen units
-        double dx = 0.0, dy = 0.0;
-
-        if (norm != 0) {
-            dx = (wx / norm) * arrowLength;
-            dy = (wy / norm) * arrowLength;
-        } else {
-            dx = dy = 0.0; // brak wiatru
-        }
-
-
-        gp << "unset arrow 1\n";
-        gp << "set arrow 1 from screen 0.85, screen 0.85 to screen "
-           << 0.85 + dx << ", screen " << 0.85 + dy
-           << " lw 3 lc rgb 'gray' front head filled size screen 0.02,15,60\n";
-
-        gp << "plot '-' matrix with image\n";
-        gp.send1d(baseForest);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        //start random fire chance == 1;
+        if (rng() % 1000 == 1)
+            initFire(baseForest);
     }
+}
 
-    cin.get();
+int main() {
+    std::uniform_int_distribution windDist(1,8);
+    int randWind = windDist(rng);
+    std::vector<std::vector<Cell>> baseForest;
+    std::vector<std::vector<Cell>> temporaryForest;
+
+    init(baseForest, temporaryForest);
+    initFire(baseForest);
+    showForest(baseForest);
+    std::cin.get();
+    simulation(baseForest, randWind);
     return 0;
 }
