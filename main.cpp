@@ -68,7 +68,6 @@ std::vector<std::vector<int>> toGnuplotMatrix(const std::vector<std::vector<Cell
     for (int y = 0; y < maxY; y++)
         for (int x = 0; x < maxX; x++)
             out[y][x] = static_cast<int>(forest[y][x]);
-
     return out;
 }
 
@@ -84,9 +83,8 @@ void fillWithTrees(std::vector<std::vector<Cell>>& baseForest) {
     }
 }
 
-void init(std::vector<std::vector<Cell>>& baseForest, std::vector<std::vector<Cell>>& temporaryForest) {
+void init(std::vector<std::vector<Cell>>& baseForest) {
     baseForest.resize(maxY, std::vector(maxX, Cell::Empty));
-    temporaryForest.resize(maxY, std::vector(maxX, Cell::Empty));
     std::vector<int> water;
 
     fillWithTrees(baseForest);
@@ -221,9 +219,8 @@ int main() {
     std::uniform_int_distribution windDist(1,8);
     int randWind = windDist(rng);
     std::vector<std::vector<Cell>> baseForest;
-    std::vector<std::vector<Cell>> temporaryForest;
 
-    init(baseForest, temporaryForest);
+    init(baseForest);
     initFire(baseForest);
     showForest(baseForest);
     std::cin.get();
